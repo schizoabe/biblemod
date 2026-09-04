@@ -145,7 +145,6 @@ public class DailyVerseSystem extends ScriptableSystem {
   }
 
   private func Log(msg: String) -> Void {
-    LogChannel(n"DEBUG", "[DailyVerse] " + msg);
   }
 
   private func ScheduleCheck(delay: Float) -> Void {
@@ -193,20 +192,31 @@ public class DailyVerseSystem extends ScriptableSystem {
       && (firstEver || hour >= DailyVerseConst.DeliveryHour());
     this.Log(s"check: day=\(day) hour=\(hour) lastDeliveredDay=\(this.lastDeliveredDay) count=\(this.deliveredCount) due=\(due)");
     if due {
-      this.triedFallback = false;
-      this.Fetch(DailyVerseConst.PrimaryUrl());
+      this.Fetch(false);
     }
   }
 
   public func ForceDeliver() -> Void {
     this.Log("ForceDeliver requested");
     this.forced = true;
-    this.triedFallback = false;
     this.lastOnDemandStamp = this.GameStamp();
-    this.Fetch(DailyVerseConst.PrimaryUrl());
+    this.Fetch(false);
   }
 
-  private func Fetch(url: String) -> Void {
+  private func BuildUrl(useFallback: Bool) -> String {
+    let gi = this.GetGameInstance();
+    let id = DailyVerseSettings.TranslationId(gi);
+    if useFallback {
+      id = Equals(id, "web") ? "kjv" : "web";
+    }
+    return DailyVerseConst.ApiRoot() + id + "/random" + DailyVerseSettings.ScopeSuffix(gi);
+  }
+
+  private func Fetch(useFallback: Bool) -> Void {
+    this.triedFallback = useFallback;
+    let url = this.BuildUrl(useFallback);
+    this.Log(s"GET \(url)");
+
     let headers: array<HttpHeader>;
     ArrayPush(headers, HttpHeader.Create("Accept", "application/json"));
     ArrayPush(headers, HttpHeader.Create("User-Agent", "CP2077-DailyVerse"));
@@ -225,13 +235,7 @@ public class DailyVerseSystem extends ScriptableSystem {
       return;
     }
 
-    let verse: String = "";
-    if this.triedFallback {
-      verse = this.ParseFallback(response);
-    } else {
-      verse = this.ParsePrimary(response);
-    }
-
+    let verse = this.ParseVerse(response);
     if StrLen(verse) == 0 {
       this.Log(s"could not parse response (fallback=\(this.triedFallback)): \(response.GetText())");
       this.OnFetchFailed();
@@ -243,9 +247,8 @@ public class DailyVerseSystem extends ScriptableSystem {
 
   private func OnFetchFailed() -> Void {
     if !this.triedFallback {
-      this.triedFallback = true;
       this.Log("primary failed, trying fallback");
-      this.Fetch(DailyVerseConst.FallbackUrl());
+      this.Fetch(true);
       return;
     }
     this.forced = false;
@@ -255,37 +258,29 @@ public class DailyVerseSystem extends ScriptableSystem {
     }
   }
 
-  private func ParsePrimary(response: ref<HttpResponse>) -> String {
+  private func ParseVerse(response: ref<HttpResponse>) -> String {
     let json = response.GetJson();
     if !IsDefined(json) || !json.IsObject() {
       return "";
     }
-    let root = json as JsonObject;
-    return this.Compose(root.GetKeyString("text"), root.GetKeyString("reference"));
-  }
+    let rv = (json as JsonObject).GetKey("random_verse") as JsonObject;
+    if !IsDefined(rv) {
+      return "";
+    }
 
-  private func ParseFallback(response: ref<HttpResponse>) -> String {
-    let json = response.GetJson();
-    if !IsDefined(json) {
-      return "";
+    let chapter = "";
+    let verse = "";
+    let cv = rv.GetKey("chapter");
+    if IsDefined(cv) {
+      chapter = cv.ToString();
     }
-    let item: ref<JsonObject>;
-    if json.IsArray() {
-      let arr = json as JsonArray;
-      if arr.GetSize() == 0u {
-        return "";
-      }
-      item = arr.GetItem(0u) as JsonObject;
-    } else if json.IsObject() {
-      item = json as JsonObject;
+    let vv = rv.GetKey("verse");
+    if IsDefined(vv) {
+      verse = vv.ToString();
     }
-    if !IsDefined(item) {
-      return "";
-    }
-    let reference = item.GetKeyString("bookname") + " "
-      + item.GetKeyString("chapter") + ":"
-      + item.GetKeyString("verse");
-    return this.Compose(item.GetKeyString("text"), reference);
+
+    let reference = rv.GetKeyString("book") + " " + chapter + ":" + verse;
+    return this.Compose(rv.GetKeyString("text"), reference);
   }
 
   private func Compose(rawText: String, rawReference: String) -> String {

@@ -14,7 +14,7 @@ public class DailyVerseContact extends ContactHandler {
   private static func RequestSentText() -> String = "Hit me";
   private static func FailureText() -> String = "Can't reach the archive right now, V. Try again in a bit.";
   private static func CooldownText() -> String = "Sit with the last one a while, V. I'll have another for you soon.";
-  private static func EmptyText() -> String = "BibleAI is active. Ask any time, V.";
+  private static func EmptyText() -> String = "BibleServiceAI is active. Ask any time, V.";
 
   private static func TypingTimeout() -> Float = 15.0;
 
